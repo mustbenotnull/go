@@ -1,1 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 
+  <title>mustbenotnull</title>
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      background: #0b0d10;
+      color: #b8bec7;
+      font-family: "Cascadia Code", "Consolas", monospace;
+    }
+
+    .status {
+      text-align: center;
+    }
+
+    .name {
+      color: #b58cff;
+      margin-bottom: 10px;
+    }
+
+    .error {
+      color: #d6b77e;
+      display: none;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="status">
+    <div class="name">mustbenotnull</div>
+    <div id="message">finding current endpoint...</div>
+    <div class="error" id="error">
+      endpoint temporarily unavailable
+    </div>
+  </div>
+
+  <script>
+    async function connect() {
+      try {
+        const response = await fetch(
+          "./current.json?t=" + Date.now(),
+          { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+          throw new Error("current.json unavailable");
+        }
+
+        const data = await response.json();
+
+        if (!data.url || !data.url.startsWith("https://")) {
+          throw new Error("invalid endpoint");
+        }
+
+        document.getElementById("message").textContent =
+          "connecting...";
+
+        window.location.replace(data.url);
+      } catch (error) {
+        document.getElementById("message").textContent =
+          "could not find current endpoint";
+
+        document.getElementById("error").style.display = "block";
+      }
+    }
+
+    connect();
+  </script>
+</body>
+</html>
