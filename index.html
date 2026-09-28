@@ -2,81 +2,248 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
   <title>mustbenotnull</title>
-
   <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d10;
+      --fg: #b8bec7;
+      --muted: #747d87;
+      --accent: #b58cff;
+      --warn: #d6b77e;
+    }
+
+    * { box-sizing: border-box; }
+
     html, body {
+      width: 100%;
       height: 100%;
       margin: 0;
+      background: var(--bg);
+      overflow: hidden;
     }
 
     body {
-      display: grid;
-      place-items: center;
-      background: #0b0d10;
-      color: #b8bec7;
-      font-family: "Cascadia Code", "Consolas", monospace;
+      font-family: "Cascadia Code", "Cascadia Mono", "JetBrains Mono",
+                   "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
     }
 
-    .status {
+    #shell {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+    }
+
+    #site {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: var(--bg);
+      opacity: 0;
+      transition: opacity .16s ease;
+    }
+
+    #site.ready { opacity: 1; }
+
+    #status {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--fg);
       text-align: center;
     }
 
+    #status.hidden { display: none; }
+
+    .status-box { max-width: 680px; }
+
     .name {
-      color: #b58cff;
       margin-bottom: 10px;
+      color: var(--accent);
+      font-size: 14px;
+    }
+
+    .message {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--muted);
     }
 
     .error {
-      color: #d6b77e;
       display: none;
-      margin-top: 12px;
+      margin-top: 14px;
+      color: var(--warn);
+      font-size: 12px;
+      line-height: 1.6;
     }
+
+    .error.visible { display: block; }
+
+    .retry {
+      display: none;
+      margin: 16px auto 0;
+      padding: 8px 12px;
+      border: 1px solid rgba(181,140,255,.35);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--accent);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .retry.visible { display: inline-block; }
   </style>
 </head>
-
 <body>
-  <div class="status">
-    <div class="name">mustbenotnull</div>
-    <div id="message">finding current endpoint...</div>
-    <div class="error" id="error">
-      endpoint temporarily unavailable
+  <div id="shell">
+    <iframe
+      id="site"
+      title="mustbenotnull"
+      referrerpolicy="no-referrer"
+      allow="clipboard-read; clipboard-write; fullscreen"
+    ></iframe>
+
+    <div id="status">
+      <div class="status-box">
+        <div class="name">mustbenotnull</div>
+        <div class="message" id="message">finding current endpoint...</div>
+        <div class="error" id="error">endpoint temporarily unavailable</div>
+        <button class="retry" id="retry" type="button">retry</button>
+      </div>
     </div>
   </div>
 
   <script>
-    async function connect() {
-      try {
+    (() => {
+      "use strict";
+
+      const ENDPOINT_FILE = "./current.json";
+      const POLL_MS = 60000;
+
+      const frame = document.getElementById("site");
+      const status = document.getElementById("status");
+      const message = document.getElementById("message");
+      const errorBox = document.getElementById("error");
+      const retry = document.getElementById("retry");
+
+      let currentURL = "";
+      let pollTimer = null;
+
+      function normalizeEndpoint(value) {
+        const url = new URL(value);
+
+        if (url.protocol !== "https:") {
+          throw new Error("endpoint must use https");
+        }
+
+        const host = url.hostname.toLowerCase();
+
+        if (!host.endsWith(".trycloudflare.com")) {
+          throw new Error("unexpected endpoint host");
+        }
+
+        url.pathname = "/";
+        url.search = "";
+        url.hash = "";
+
+        return url.toString();
+      }
+
+      async function readEndpoint() {
         const response = await fetch(
-          "./current.json?t=" + Date.now(),
-          { cache: "no-store" }
+          ENDPOINT_FILE + "?t=" + Date.now(),
+          {
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+          }
         );
 
         if (!response.ok) {
-          throw new Error("current.json unavailable");
+          throw new Error("current.json returned " + response.status);
         }
 
         const data = await response.json();
 
-        if (!data.url || !data.url.startsWith("https://")) {
-          throw new Error("invalid endpoint");
+        if (!data || typeof data.url !== "string") {
+          throw new Error("current.json does not contain url");
         }
 
-        document.getElementById("message").textContent =
-          "connecting...";
-
-        window.location.replace(data.url);
-      } catch (error) {
-        document.getElementById("message").textContent =
-          "could not find current endpoint";
-
-        document.getElementById("error").style.display = "block";
+        return {
+          url: normalizeEndpoint(data.url),
+          updatedAt: data.updated_at || ""
+        };
       }
-    }
 
-    connect();
+      function showError(text) {
+        message.textContent = "could not reach the current endpoint";
+        errorBox.textContent = text || "endpoint temporarily unavailable";
+        errorBox.classList.add("visible");
+        retry.classList.add("visible");
+        status.classList.remove("hidden");
+      }
+
+      function showConnecting() {
+        message.textContent = "connecting...";
+        errorBox.classList.remove("visible");
+        retry.classList.remove("visible");
+        status.classList.remove("hidden");
+      }
+
+      function setFrame(endpoint) {
+        if (endpoint === currentURL) return;
+
+        currentURL = endpoint;
+        showConnecting();
+
+        frame.classList.remove("ready");
+        frame.src = endpoint;
+      }
+
+      async function refreshEndpoint(initial = false) {
+        try {
+          const endpoint = await readEndpoint();
+
+          if (initial || endpoint.url !== currentURL) {
+            setFrame(endpoint.url);
+          }
+        } catch (err) {
+          if (initial || !currentURL) {
+            showError("endpoint temporarily unavailable");
+          }
+          console.error("[locator]", err);
+        }
+      }
+
+      frame.addEventListener("load", () => {
+        if (!currentURL) return;
+
+        frame.classList.add("ready");
+        status.classList.add("hidden");
+      });
+
+      retry.addEventListener("click", () => {
+        refreshEndpoint(true);
+      });
+
+      refreshEndpoint(true);
+
+      pollTimer = setInterval(() => {
+        refreshEndpoint(false);
+      }, POLL_MS);
+
+      window.addEventListener("beforeunload", () => {
+        if (pollTimer) clearInterval(pollTimer);
+      });
+    })();
   </script>
 </body>
 </html>
