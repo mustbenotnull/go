@@ -7,7 +7,6 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#100e15">
   <title>mbnnOS — mustbenotnull</title>
-
   <style>
     :root {
       color-scheme: dark;
@@ -23,13 +22,11 @@
       width: 100%;
       height: 100%;
       margin: 0;
-      background: var(--bg);
       overflow: hidden;
+      background: var(--bg);
     }
 
-    body {
-      font-family: monospace;
-    }
+    body { font-family: monospace; }
 
     #shell {
       position: fixed;
@@ -45,14 +42,11 @@
       border: 0;
       background: var(--bg);
       opacity: 0;
-      transition: opacity .16s ease;
+      transition: opacity .3s ease;
     }
 
-    #site.ready {
-      opacity: 1;
-    }
+    #site.ready { opacity: 1; }
 
-    /* Matches the mbnnOS startup screen */
     #status {
       position: absolute;
       inset: 0;
@@ -67,9 +61,7 @@
       font: 12px monospace;
     }
 
-    #status.hidden {
-      display: none;
-    }
+    #status.hidden { display: none; }
 
     .boot-mark {
       color: white;
@@ -86,8 +78,8 @@
     }
 
     #message {
-      font: 12px monospace;
       color: var(--muted);
+      font: 12px monospace;
     }
 
     #error {
@@ -97,30 +89,21 @@
       font: 12px/1.6 monospace;
     }
 
-    #error.visible {
-      display: block;
-    }
+    #error.visible { display: block; }
 
     #retry {
       display: none;
       margin: 0 auto;
       padding: 7px 16px;
-      color: var(--accent);
-      background: transparent;
       border: 1px solid #685173;
       border-radius: 6px;
+      background: transparent;
+      color: var(--accent);
       font: 12px monospace;
       cursor: pointer;
     }
 
-    #retry.visible {
-      display: block;
-    }
-
-    #retry:hover {
-      background: #b594f91a;
-      border-color: var(--accent);
-    }
+    #retry.visible { display: block; }
 
     @keyframes blink {
       0%, 49% { opacity: 1; }
@@ -156,6 +139,7 @@
       "use strict";
 
       const ENDPOINT_FILE = "./current.json";
+      const BOOT_MS = 3000;
       const POLL_MS = 60000;
       const LOAD_TIMEOUT_MS = 30000;
 
@@ -166,23 +150,20 @@
       const retry = document.getElementById("retry");
 
       let currentURL = "";
+      let loading = false;
       let loadTimer = null;
       let requestId = 0;
+      let bootFinished = false;
 
       function normalizeEndpoint(value) {
         const url = new URL(value);
 
-        if (url.protocol !== "https:") {
-          throw new Error("HTTPS endpoint required");
-        }
-
-        const host = url.hostname.toLowerCase();
-
         if (
-          host === "trycloudflare.com" ||
-          !host.endsWith(".trycloudflare.com")
+          url.protocol !== "https:" ||
+          url.hostname === "trycloudflare.com" ||
+          !url.hostname.toLowerCase().endsWith(".trycloudflare.com")
         ) {
-          throw new Error("Unexpected endpoint host");
+          throw new Error("Invalid Quick Tunnel endpoint");
         }
 
         url.pathname = "/";
@@ -197,16 +178,12 @@
           ENDPOINT_FILE + "?t=" + Date.now(),
           {
             cache: "no-store",
-            headers: {
-              Accept: "application/json"
-            }
+            headers: { Accept: "application/json" }
           }
         );
 
         if (!response.ok) {
-          throw new Error(
-            "Endpoint lookup failed: HTTP " + response.status
-          );
+          throw new Error("HTTP " + response.status);
         }
 
         const data = await response.json();
@@ -235,7 +212,7 @@
         frame.classList.remove("ready");
       }
 
-      function clearLoadTimeout() {
+      function clearLoadTimer() {
         if (loadTimer !== null) {
           clearTimeout(loadTimer);
           loadTimer = null;
@@ -246,17 +223,15 @@
         if (!force && endpoint === currentURL) return;
 
         currentURL = endpoint;
-        clearLoadTimeout();
+        loading = true;
+        clearLoadTimer();
         showPreparing();
 
         frame.classList.remove("ready");
         frame.src = endpoint;
 
         loadTimer = setTimeout(() => {
-          loadTimer = null;
-          if (!frame.classList.contains("ready")) {
-            showError();
-          }
+          if (loading) showError();
         }, LOAD_TIMEOUT_MS);
       }
 
@@ -265,17 +240,13 @@
 
         try {
           const endpoint = await readEndpoint();
-
           if (id !== requestId) return;
 
           setFrame(endpoint, force);
         } catch (err) {
           console.error("[mbnnOS locator]", err);
-
           if (id !== requestId) return;
 
-          // Keep an already visible workspace alive
-          // if a background endpoint lookup fails.
           if (!frame.classList.contains("ready")) {
             showError();
           }
@@ -285,7 +256,8 @@
       frame.addEventListener("load", () => {
         if (!currentURL) return;
 
-        clearLoadTimeout();
+        loading = false;
+        clearLoadTimer();
 
         frame.classList.add("ready");
         status.classList.add("hidden");
@@ -293,20 +265,23 @@
 
       retry.addEventListener("click", () => {
         showPreparing();
-        refreshEndpoint(true);
+        if (bootFinished) refreshEndpoint(true);
       });
 
-      // Start the connection.
-      refreshEndpoint();
-
-      // Detect Quick Tunnel URL changes without
-      // reloading an unchanged endpoint.
-      const pollTimer = setInterval(() => {
+      // GitHub welcome screen lasts 3 full seconds.
+      // No mbnnOS iframe is started during this period.
+      setTimeout(() => {
+        bootFinished = true;
         refreshEndpoint();
+      }, BOOT_MS);
+
+      // Only monitor endpoint changes once startup has begun.
+      const pollTimer = setInterval(() => {
+        if (bootFinished) refreshEndpoint();
       }, POLL_MS);
 
       window.addEventListener("beforeunload", () => {
-        clearLoadTimeout();
+        clearLoadTimer();
         clearInterval(pollTimer);
       });
     })();
