@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,7 +6,6 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#100e15">
   <title>mbnnOS — mustbenotnull</title>
-
   <style>
     :root { color-scheme: dark; --bg:#100e15; --muted:#a69ab2; --accent:#b594f9; --error:#e39bb3; }
     * { box-sizing:border-box; }
@@ -22,6 +20,7 @@
     .boot-word { display:inline-block; color:#fff; transform-origin:center; animation:mbnn-breathe 3s ease-in-out infinite; }
     .boot-cursor { display:inline-block; color:var(--accent); animation:cursor-blink 1s steps(1,end) infinite; }
     #message { color:var(--muted); font:12px monospace; }
+    #message .ellipsis { display:inline-block; letter-spacing:-.34em; padding-right:.34em; }
     #error { display:none; max-width:340px; color:var(--error); font:12px/1.6 monospace; }
     #error.visible { display:block; }
     #retry { display:none; margin:0 auto; padding:7px 16px; border:1px solid #685173; border-radius:6px; background:transparent; color:var(--accent); font:12px monospace; cursor:pointer; }
@@ -37,7 +36,7 @@
     <iframe id="site" title="mbnnOS" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write; fullscreen"></iframe>
     <div id="status" role="status" aria-live="polite">
       <div class="boot-mark"><span class="boot-word">mbnn</span><span class="boot-cursor">_</span></div>
-      <div id="message">Preparing workspace...</div>
+      <div id="message">Preparing workspace<span class="ellipsis">...</span></div>
       <div id="error">Endpoint temporarily unavailable.</div>
       <button id="retry" type="button">retry</button>
     </div>
@@ -49,8 +48,9 @@
     let currentURL="",loading=false,loadTimer=null,requestId=0,bootFinished=false;
     function normalizeEndpoint(value){const url=new URL(value);if(url.protocol!=="https:"||url.hostname.toLowerCase()==="trycloudflare.com"||!url.hostname.toLowerCase().endsWith(".trycloudflare.com"))throw new Error("Invalid Quick Tunnel endpoint");url.pathname="/";url.search="";url.hash="";return url.toString();}
     async function readEndpoint(){const response=await fetch(ENDPOINT_FILE+"?t="+Date.now(),{cache:"no-store",headers:{Accept:"application/json"}});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();if(!data||typeof data.url!=="string")throw new Error("Missing endpoint URL");return normalizeEndpoint(data.url);}
-    function showPreparing(){message.textContent="Preparing workspace...";errorBox.classList.remove("visible");retry.classList.remove("visible");status.classList.remove("hidden");}
-    function showError(){message.textContent="Workspace unavailable.";errorBox.textContent="Could not connect to the current endpoint.";errorBox.classList.add("visible");retry.classList.add("visible");status.classList.remove("hidden");frame.classList.remove("ready");}
+    function setMessage(text){message.textContent="";const base=text.endsWith("...")?text.slice(0,-3):text;message.append(document.createTextNode(base));if(text.endsWith("...")){const dots=document.createElement("span");dots.className="ellipsis";dots.textContent="...";message.append(dots);}}
+    function showPreparing(){setMessage("Preparing workspace...");errorBox.classList.remove("visible");retry.classList.remove("visible");status.classList.remove("hidden");}
+    function showError(){setMessage("Workspace unavailable.");errorBox.textContent="Could not connect to the current endpoint.";errorBox.classList.add("visible");retry.classList.add("visible");status.classList.remove("hidden");frame.classList.remove("ready");}
     function clearLoadTimer(){if(loadTimer!==null){clearTimeout(loadTimer);loadTimer=null;}}
     function setFrame(endpoint,force=false){if(!force&&endpoint===currentURL)return;currentURL=endpoint;loading=true;clearLoadTimer();showPreparing();frame.classList.remove("ready");frame.src=endpoint;loadTimer=setTimeout(()=>{if(loading){loading=false;showError();}},LOAD_TIMEOUT_MS);}
     async function refreshEndpoint(force=false){const id=++requestId;try{const endpoint=await readEndpoint();if(id!==requestId)return;setFrame(endpoint,force);}catch(err){console.error("[mbnnOS locator]",err);if(id!==requestId)return;if(!frame.classList.contains("ready"))showError();}}
